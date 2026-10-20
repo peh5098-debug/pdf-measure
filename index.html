@@ -1,0 +1,822 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#2457d6">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>:root{padding-top:env(safe-area-inset-top,0px);color-scheme:light}html{background:#14171c}</style>
+<title>도면 치수 측정기</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one-screen app. Top bar, full-bleed drawing stage with floating loupe / readout / nudge pad, bottom dock. */
+:root{
+  --bg:#dfe3e8; --chrome:#fbfbfc; --chrome-2:#eef1f4; --ink:#14181f; --muted:#5a6472; --line:#d3d9e0;
+  --accent:#2457d6; --accent-ink:#ffffff; --accent-soft:#e5ecff; --warn:#b4540a; --warn-soft:#fff0e0; --dim:#c81e35;
+  --sans:"IBM Plex Sans","Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#14171c; --chrome:#1d2127; --chrome-2:#272c34; --ink:#e9ecf1; --muted:#9ba5b3; --line:#363d48;
+  --accent:#86a8ff; --accent-ink:#0a1226; --accent-soft:#23325c; --warn:#ffb067; --warn-soft:#3b2a17; --dim:#ff7185; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#14171c; --chrome:#1d2127; --chrome-2:#272c34; --ink:#e9ecf1; --muted:#9ba5b3; --line:#363d48;
+  --accent:#86a8ff; --accent-ink:#0a1226; --accent-soft:#23325c; --warn:#ffb067; --warn-soft:#3b2a17; --dim:#ff7185; color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;display:flex;flex-direction:column;background:var(--bg);color:var(--ink);font:14px/1.4 var(--sans);overflow:hidden;-webkit-tap-highlight-color:transparent}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.gut{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+svg.ic{width:20px;height:20px;flex:none;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.btn{height:40px;min-width:40px;padding:0 12px;border:1px solid var(--line);background:var(--chrome-2);border-radius:8px;display:inline-flex;align-items:center;justify-content:center;gap:6px;font-weight:500;white-space:nowrap}
+.btn:active{filter:brightness(.94)}
+label.btn{cursor:pointer;user-select:none}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:transparent;font-weight:600}
+.btn.danger{color:var(--dim)}
+.btn:disabled{opacity:.4;cursor:default}
+.top{display:flex;align-items:center;gap:8px;padding-block:8px;background:var(--chrome);border-bottom:1px solid var(--line)}
+.fname{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
+.fname small{color:var(--muted);font-weight:400;margin-left:6px}
+.pager{display:flex;align-items:center;gap:2px;font:500 13px var(--mono)}
+.pager .btn{min-width:34px;height:34px;padding:0}
+.chip{height:36px;padding:0 12px;border-radius:18px;border:1px solid var(--line);background:transparent;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-weight:500}
+.chip[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.chip.warn{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
+.chip .mono{font-family:var(--mono)}
+.badge{min-width:20px;height:20px;border-radius:10px;background:var(--accent);color:var(--accent-ink);font:600 12px/20px var(--mono);text-align:center;padding:0 5px}
+#stage{position:relative;flex:1;min-height:0;overflow:hidden;background:var(--bg)}
+#view{position:absolute;inset:0;width:100%;height:100%;touch-action:none;display:block;cursor:crosshair}
+#view.pan{cursor:grab}
+#loupe{position:absolute;top:10px;left:max(16px,env(safe-area-inset-left,0px));width:140px;height:140px;border:2px solid var(--ink);border-radius:12px;background:#fff;box-shadow:0 4px 14px rgba(0,0,0,.3);pointer-events:none}
+#loupe.right{left:auto;right:max(16px,env(safe-area-inset-right,0px))}
+.hud{position:absolute;left:0;right:0;bottom:0;padding-bottom:12px;display:flex;flex-direction:column;align-items:flex-end;gap:10px;pointer-events:none}
+.hud>*{pointer-events:auto}
+.toast{align-self:center;background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:999px;font-size:13px;max-width:92%;text-align:center;opacity:0;visibility:hidden;transition:opacity .2s;pointer-events:none!important}
+.toast.on{opacity:1;visibility:visible}
+.pad{display:grid;grid-template-columns:repeat(3,42px);grid-template-rows:repeat(3,42px);gap:4px;margin-right:max(16px,env(safe-area-inset-right,0px))}
+.pad button{border:1px solid var(--line);background:var(--chrome);border-radius:10px;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.18);touch-action:none}
+.pad button:active{background:var(--accent-soft)}
+.pad .step{grid-area:2/2;display:flex;align-items:center;justify-content:center;font:600 11px var(--mono);color:var(--muted);background:var(--chrome);border:1px solid var(--line);border-radius:10px}
+.readout{width:calc(100% - 2*max(16px,env(safe-area-inset-left,0px)));margin:0 max(16px,env(safe-area-inset-left,0px));background:var(--chrome);border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:flex;align-items:center;gap:12px;box-shadow:0 2px 10px rgba(0,0,0,.2)}
+.ro-main{flex:1;min-width:0}
+.ro-label{font-size:12px;color:var(--muted)}
+.ro-val{font:600 26px/1.15 var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.ro-val.hint{font:500 14px/1.4 var(--sans);white-space:normal;cursor:default}
+.ro-det{display:grid;grid-template-columns:auto auto;gap:1px 8px;font:500 12px var(--mono);font-variant-numeric:tabular-nums;color:var(--muted)}
+.ro-det b{font-weight:500;color:var(--ink);text-align:right}
+.ro-btns{display:flex;gap:6px}
+.dock{background:var(--chrome);border-top:1px solid var(--line);padding-block:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:8px}
+.toggles{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
+.toggles::-webkit-scrollbar{display:none}
+.row{display:flex;gap:8px;align-items:stretch}
+.seg{display:flex;flex:1.3;min-width:0;background:var(--chrome-2);border:1px solid var(--line);border-radius:12px;padding:3px;gap:2px}
+.seg button{flex:1;min-width:0;height:44px;border:0;background:transparent;border-radius:9px;display:flex;align-items:center;justify-content:center;gap:5px;font-weight:500;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--chrome);color:var(--accent);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.22)}
+.confirm{flex:1;height:auto;min-height:52px;font-size:16px;border-radius:12px}
+.scrim{position:fixed;inset:0;background:rgba(8,12,18,.5);z-index:20}
+.sheet{position:fixed;z-index:21;left:50%;bottom:0;transform:translateX(-50%);width:min(100%,560px);max-height:80%;overflow:auto;background:var(--chrome);border-radius:16px 16px 0 0;padding-top:16px;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));box-shadow:0 -8px 30px rgba(0,0,0,.3)}
+.sheet h2{margin:0 0 4px;font-size:17px;font-weight:600}
+.sheet p{margin:4px 0 12px;color:var(--muted)}
+.sheet h3{margin:16px 0 8px;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.sh-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.fld{display:flex;gap:8px;align-items:center;margin:8px 0}
+.fld input[type=number]{flex:1;min-width:0;height:48px;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:var(--chrome-2);font:600 20px var(--mono)}
+.fld .pre{font:600 20px var(--mono);color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.wide{width:100%;height:48px}
+.mlist{display:flex;flex-direction:column;gap:6px;margin:8px 0}
+.mrow{display:grid;grid-template-columns:30px 1fr auto;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--chrome-2)}
+.mrow[aria-current="true"]{border-color:var(--dim)}
+.mrow .id{width:30px;height:30px;border-radius:50%;background:var(--dim);color:#fff;font:600 13px/30px var(--mono);text-align:center}
+.mrow .v{font:600 16px var(--mono);font-variant-numeric:tabular-nums}
+.mrow .d{font:12px var(--mono);color:var(--muted)}
+.mrow .go{border:0;background:none;text-align:left;padding:0;min-width:0}
+.empty{padding:18px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:10px}
+.acts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.sum{display:flex;justify-content:space-between;font:600 14px var(--mono);margin-top:6px}
+#pngimg{max-width:100%;border:1px solid var(--line);border-radius:8px;background:#fff}
+@media (min-width:760px){.seg button{height:40px}.top .fname small{display:inline}}
+@media (prefers-reduced-motion:reduce){.toast{transition:none}}
+</style>
+
+</head>
+<body>
+<header class="top gut">
+  <label class="btn" id="btnOpen" for="file" tabindex="0" role="button" aria-label="파일 열기"><svg class="ic" data-ic="open"></svg><span>열기</span></label>
+  <div class="fname" id="fname">예시 도면</div>
+  <div class="pager" id="pager" hidden>
+    <button class="btn" id="pgPrev" aria-label="이전 페이지"><svg class="ic" data-ic="left"></svg></button>
+    <span id="pgNum">1/1</span>
+    <button class="btn" id="pgNext" aria-label="다음 페이지"><svg class="ic" data-ic="right"></svg></button>
+  </div>
+  <button class="chip" id="chipScale"><svg class="ic" data-ic="ruler"></svg><span class="mono" id="scaleTxt">축척</span></button>
+  <button class="btn" id="btnList" aria-label="측정 목록"><svg class="ic" data-ic="list"></svg><span class="badge" id="cnt">0</span></button>
+</header>
+
+<main id="stage">
+  <canvas id="view"></canvas>
+  <canvas id="loupe" hidden></canvas>
+  <div class="hud">
+    <div class="pad" id="pad" hidden>
+      <span></span><button data-n="0,-1" aria-label="위로"><svg class="ic" data-ic="up"></svg></button><span></span>
+      <button data-n="-1,0" aria-label="왼쪽"><svg class="ic" data-ic="left"></svg></button><span class="step" id="stepTxt">1px</span><button data-n="1,0" aria-label="오른쪽"><svg class="ic" data-ic="right"></svg></button>
+      <span></span><button data-n="0,1" aria-label="아래로"><svg class="ic" data-ic="down"></svg></button><span></span>
+    </div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <div class="readout">
+      <div class="ro-main">
+        <div class="ro-label" id="roLabel">거리</div>
+        <div class="ro-val" id="roVal" title="탭하면 mm / m 전환">—</div>
+      </div>
+      <div class="ro-det" id="roDet" hidden></div>
+      <div class="ro-btns">
+        <button class="btn" id="btnUndo" aria-label="되돌리기"><svg class="ic" data-ic="undo"></svg></button>
+        <button class="btn" id="btnDone" aria-label="연속 측정 완료" hidden><svg class="ic" data-ic="check"></svg>완료</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer class="dock gut">
+  <div class="toggles" role="group" aria-label="측정 옵션">
+    <button class="chip" id="tgOrtho" aria-pressed="false">직교</button>
+    <button class="chip" id="tgSnap" aria-pressed="true">점 스냅</button>
+    <button class="chip" id="tgChain" aria-pressed="false">연속 측정</button>
+    <button class="chip" id="tgFine" aria-pressed="false">미세 조정</button>
+    <button class="chip" id="tgLoupe" aria-pressed="true">확대경</button>
+    <button class="chip" id="tgFit">전체 보기</button>
+  </div>
+  <div class="row">
+    <div class="seg" role="group" aria-label="도구">
+      <button id="tlPan" aria-pressed="false"><svg class="ic" data-ic="hand"></svg>이동</button>
+      <button id="tlCal" aria-pressed="false"><svg class="ic" data-ic="ruler"></svg>보정</button>
+      <button id="tlMeas" aria-pressed="true"><svg class="ic" data-ic="target"></svg>측정</button>
+    </div>
+    <button class="btn primary confirm" id="btnPick"><svg class="ic" data-ic="plus"></svg>점 찍기</button>
+  </div>
+</footer>
+
+<input type="file" id="file" accept="application/pdf,.pdf,image/*" style="position:fixed;left:-9999px;width:1px;height:1px;opacity:0" tabindex="-1">
+
+<div class="scrim" id="scrim" hidden></div>
+
+<section class="sheet gut" id="sheetScale" hidden aria-label="축척 설정">
+  <div class="sh-head"><h2>축척 설정</h2><button class="btn" data-close aria-label="닫기"><svg class="ic" data-ic="x"></svg></button></div>
+  <p id="scaleStatus">측정하려면 먼저 실제 길이를 알려주세요.</p>
+  <button class="btn primary wide" id="btnCalStart"><svg class="ic" data-ic="ruler"></svg>도면의 치수선으로 보정</button>
+  <p style="margin-top:8px">도면에 적힌 길이(예: 3,000 mm 그리드 간격)의 양 끝점을 찍고 길이를 입력합니다. 가장 정확한 방법입니다.</p>
+  <div id="ratioBox">
+    <h3>도면 축척으로 입력 (PDF)</h3>
+    <div class="chips" id="ratioChips"></div>
+    <div class="fld"><span class="pre">1 :</span><input type="number" id="ratioIn" inputmode="decimal" min="1" placeholder="100"><button class="btn" id="btnRatio">적용</button></div>
+    <p>용지에 맞춰 축소 인쇄된 PDF는 이 방법이 맞지 않을 수 있습니다. 그럴 때는 치수선으로 보정하세요.</p>
+  </div>
+</section>
+
+<section class="sheet gut" id="sheetLen" hidden aria-label="기준 길이 입력">
+  <div class="sh-head"><h2>기준 길이 입력</h2><button class="btn" data-close aria-label="닫기"><svg class="ic" data-ic="x"></svg></button></div>
+  <p>찍은 두 점 사이의 실제 길이를 입력하세요.</p>
+  <div class="fld"><input type="number" id="lenIn" inputmode="decimal" min="0" step="any" value="3000" aria-label="실제 길이"><button class="chip" id="lenUnit" aria-pressed="false">mm</button></div>
+  <button class="btn primary wide" id="btnLenOk">축척 적용</button>
+</section>
+
+<section class="sheet gut" id="sheetList" hidden aria-label="측정 목록">
+  <div class="sh-head"><h2>측정 목록</h2><button class="btn" data-close aria-label="닫기"><svg class="ic" data-ic="x"></svg></button></div>
+  <div class="mlist" id="mlist"></div>
+  <div class="sum" id="sumRow" hidden><span>합계</span><span id="sumVal"></span></div>
+  <div class="acts">
+    <button class="btn" id="btnCopy"><svg class="ic" data-ic="copy"></svg>표 복사 (엑셀)</button>
+    <button class="btn" id="btnCsv"><svg class="ic" data-ic="down"></svg>CSV 저장</button>
+    <button class="btn" id="btnPng"><svg class="ic" data-ic="img"></svg>PNG 저장</button>
+    <button class="btn danger" id="btnClear"><svg class="ic" data-ic="trash"></svg>모두 삭제</button>
+  </div>
+</section>
+
+<section class="sheet gut" id="sheetImg" hidden aria-label="이미지 저장">
+  <div class="sh-head"><h2>이미지 저장</h2><button class="btn" data-close aria-label="닫기"><svg class="ic" data-ic="x"></svg></button></div>
+  <p>이미지를 길게 누르거나 오른쪽 클릭해서 저장하세요.</p>
+  <img id="pngimg" alt="치수가 표시된 도면">
+</section>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
+<script>
+/* Run pdf.js on the main thread: expose the preloaded worker module under the global name pdf.js looks for. */
+try { if (!window.pdfjsWorker && window['pdfjs-dist/build/pdf.worker']) window.pdfjsWorker = window['pdfjs-dist/build/pdf.worker']; } catch (e) {}
+try { if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; } catch (e) {}
+</script>
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const view = $('#view'), vctx = view.getContext('2d');
+const loupeEl = $('#loupe'), lctx = loupeEl.getContext('2d');
+const stage = $('#stage');
+const LS = 140, LZ = 4;                       // loupe css size, magnification
+const COL = { dim:'#c81e35', ref:'#2457d6', cross:'#0a9bd8', snap:'#13a05b', paper:'#ffffff' };
+const MONO = '"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace';
+const dpr = () => Math.min(window.devicePixelRatio || 1, 3);
+
+const ICONS = {
+  open:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  list:'<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>',
+  left:'<path d="m15 6-6 6 6 6"/>', right:'<path d="m9 6 6 6-6 6"/>', up:'<path d="m6 15 6-6 6 6"/>', down:'<path d="m6 9 6 6 6-6"/>',
+  ruler:'<path d="m3 17 14-14 4 4L7 21z"/><path d="m7 13 2 2m1-5 2 2m1-5 2 2"/>',
+  hand:'<path d="M8 12V5a1.5 1.5 0 0 1 3 0v6m0-1V4a1.5 1.5 0 0 1 3 0v6m0-4a1.5 1.5 0 0 1 3 0v8a6 6 0 0 1-6 6h-1a6 6 0 0 1-5-3l-3-5a1.5 1.5 0 0 1 2.4-1.7L8 14"/>',
+  target:'<circle cx="12" cy="12" r="7"/><path d="M12 2v6M12 16v6M2 12h6M16 12h6"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>', x:'<path d="M6 6l12 12M18 6 6 18"/>', check:'<path d="m5 13 4 4 10-10"/>',
+  undo:'<path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>',
+  copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/>',
+  down2:'<path d="M12 4v11m-5-5 5 5 5-5M5 20h14"/>', img:'<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m21 16-5-5-9 9"/>',
+  trash:'<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>'
+};
+ICONS.down = ICONS.down; // arrow chevron used by pad
+document.querySelectorAll('svg[data-ic]').forEach(s => {
+  const n = s.dataset.ic;
+  s.setAttribute('viewBox', '0 0 24 24');
+  s.innerHTML = (n === 'down' && s.closest('#btnCsv')) ? ICONS.down2 : ICONS[n];
+});
+$('#btnCsv svg').innerHTML = ICONS.down2;
+
+const S = {
+  pg: null, name:'', doc:null, page:0, pages:1,
+  T:{x:0,y:0,s:1}, scales:{}, meas:[], nextId:1,
+  tool:'meas', ortho:false, snap:true, chain:false, fine:matchMedia('(pointer:coarse)').matches, loupe:true, unit:'mm',
+  cur:[], calA:null, calB:null, ret:null, retSnap:false, press:false, sel:null, sample:false
+};
+const R = { base:null, reg:null, lp:null };   // rendered bitmaps: whole-page base, visible region, loupe patch
+let W = 0, H = 0;
+
+/* ---------- sources ---------- */
+async function makePdfPage(doc, i){
+  const page = await doc.getPage(i + 1);
+  const vp = page.getViewport({ scale:1 });
+  return { kind:'pdf', w:vp.width, h:vp.height, page,
+    render(canvas, x0, y0, sc){
+      const viewport = page.getViewport({ scale:sc, offsetX:-x0*sc, offsetY:-y0*sc });
+      return page.render({ canvasContext:canvas.getContext('2d'), viewport, background:'#ffffff' });
+    } };
+}
+function makeImgPage(img, w, h){ return { kind:'img', img, w, h }; }
+
+function makeSample(){
+  const c = document.createElement('canvas'); c.width = 3200; c.height = 2200;
+  const x = c.getContext('2d'); x.scale(2, 2);
+  x.fillStyle = '#fff'; x.fillRect(0,0,1600,1100);
+  x.strokeStyle = '#222'; x.lineWidth = 2; x.strokeRect(20,20,1560,1060);
+  const gx = [250,550,850,1150,1450], gy = [250,550,850];
+  x.font = '500 16px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.strokeStyle = '#8a4b9c'; x.lineWidth = 1; x.setLineDash([22,5,3,5]);
+  gx.forEach((v,i) => { x.beginPath(); x.moveTo(v,100); x.lineTo(v,960); x.stroke(); });
+  gy.forEach(v => { x.beginPath(); x.moveTo(110,v); x.lineTo(1540,v); x.stroke(); });
+  x.setLineDash([]); x.fillStyle = '#222';
+  gx.forEach((v,i) => { x.beginPath(); x.arc(v,78,18,0,7); x.stroke(); x.fillText('ABCDE'[i],v,79); });
+  gy.forEach((v,i) => { x.beginPath(); x.arc(88,v,18,0,7); x.stroke(); x.fillText(String(i+1),88,v+1); });
+  x.strokeStyle = '#222'; x.lineWidth = 1.2;
+  [[250,550],[550,850],[850,1150],[1150,1450]].forEach(([a,b]) => {
+    x.beginPath(); x.moveTo(a,130); x.lineTo(b,130); x.stroke();
+    x.beginPath(); x.moveTo(a-6,136); x.lineTo(a+6,124); x.moveTo(b-6,136); x.lineTo(b+6,124); x.stroke();
+    x.beginPath(); x.moveTo(a,110); x.lineTo(a,138); x.moveTo(b,110); x.lineTo(b,138); x.stroke();
+    x.font = '500 14px sans-serif'; x.fillText('3000',(a+b)/2,118);
+  });
+  gx.forEach(a => gy.forEach(b => { x.fillStyle = '#ddd'; x.fillRect(a-20,b-20,40,40); x.strokeStyle = '#222'; x.lineWidth = 2; x.strokeRect(a-20,b-20,40,40);
+    x.beginPath(); x.moveTo(a-20,b-20); x.lineTo(a+20,b+20); x.moveTo(a+20,b-20); x.lineTo(a-20,b+20); x.lineWidth = 1; x.stroke(); }));
+  x.strokeStyle = '#1d6fa5'; x.lineWidth = 3;
+  [394,406].forEach(y => { x.beginPath(); x.moveTo(250,y); x.lineTo(1450,y); x.stroke(); });
+  x.setLineDash([16,4,3,4]); x.lineWidth = 1; x.beginPath(); x.moveTo(230,400); x.lineTo(1470,400); x.stroke(); x.setLineDash([]);
+  x.fillStyle = '#1d6fa5'; x.font = '500 15px sans-serif';
+  [420,700,980,1260].forEach((h,i) => {
+    x.strokeStyle = '#1d6fa5'; x.lineWidth = 2; x.strokeRect(h-9,391,18,18);
+    x.beginPath(); x.moveTo(h,360); x.lineTo(h,391); x.moveTo(h-14,360); x.lineTo(h+14,360); x.stroke();
+    x.fillText('H'+(i+1),h,342);
+  });
+  x.textAlign = 'left'; x.fillStyle = '#222'; x.font = '600 18px sans-serif'; x.fillText('SAMPLE  배관 지지 평면도', 1090, 1030);
+  x.font = '14px sans-serif'; x.fillText('예시 도면 · 그리드 간격 3000 mm · 축척 1:100', 1090, 1052);
+  return c;
+}
+
+/* ---------- view math ---------- */
+const toWorld = (px, py) => ({ x:(px - S.T.x)/S.T.s, y:(py - S.T.y)/S.T.s });
+const toScr = p => ({ x:p.x*S.T.s + S.T.x, y:p.y*S.T.s + S.T.y });
+function fitView(){
+  const g = S.pg; if (!g || !W) return;
+  const s = Math.min((W-24)/g.w, (H-24)/g.h);
+  S.T = { s, x:(W - g.w*s)/2, y:(H - g.h*s)/2 }; S.fitS = s;
+  draw(); scheduleRegion();
+}
+function clampView(){
+  const g = S.pg; if (!g) return;
+  const s = S.T.s, m = 60;
+  S.T.x = Math.min(W - m, Math.max(m - g.w*s, S.T.x));
+  S.T.y = Math.min(H - m, Math.max(m - g.h*s, S.T.y));
+}
+function zoomAt(cx, cy, f){
+  const lo = (S.fitS || 1)*0.3, hi = 80;
+  const ns = Math.min(hi, Math.max(lo, S.T.s*f)); f = ns / S.T.s;
+  S.T.x = cx - (cx - S.T.x)*f; S.T.y = cy - (cy - S.T.y)*f; S.T.s = ns;
+  clampView(); draw(); scheduleRegion(); loupeSoon();
+}
+
+/* ---------- rendering of page bitmaps ---------- */
+let baseTask = null, regTask = null, lpTask = null, regTimer = 0, lpTimer = 0, rid = 0;
+async function renderBase(){
+  const g = S.pg; R.base = null; R.reg = null; R.lp = null;
+  if (!g || g.kind !== 'pdf') return;
+  const my = ++rid; if (baseTask) { try{ baseTask.cancel(); }catch(e){} }
+  const sc = Math.min(2.5, Math.sqrt(6e6/(g.w*g.h)));
+  const c = document.createElement('canvas'); c.width = Math.ceil(g.w*sc); c.height = Math.ceil(g.h*sc);
+  baseTask = g.render(c, 0, 0, sc);
+  try { await baseTask.promise; } catch(e){ return; }
+  if (my !== rid) return; R.base = { c, s:sc }; draw();
+}
+function scheduleRegion(){ clearTimeout(regTimer); regTimer = setTimeout(renderRegion, 140); }
+async function renderRegion(){
+  const g = S.pg; if (!g || g.kind !== 'pdf' || !W) return;
+  const T = S.T, d = dpr(), mx = W*0.25, my = H*0.25;
+  const x0 = Math.max(0, (-T.x - mx)/T.s), y0 = Math.max(0, (-T.y - my)/T.s);
+  const x1 = Math.min(g.w, (W + mx - T.x)/T.s), y1 = Math.min(g.h, (H + my - T.y)/T.s);
+  if (x1 <= x0 || y1 <= y0) return;
+  const sc = T.s*d, c = document.createElement('canvas');
+  c.width = Math.max(1, Math.ceil((x1-x0)*sc)); c.height = Math.max(1, Math.ceil((y1-y0)*sc));
+  if (c.width*c.height > 36e6) return;
+  const my2 = rid; if (regTask) { try{ regTask.cancel(); }catch(e){} }
+  regTask = g.render(c, x0, y0, sc);
+  try { await regTask.promise; } catch(e){ return; }
+  if (my2 !== rid) return; R.reg = { c, x0, y0, s:sc }; draw();
+}
+function loupeSoon(){ clearTimeout(lpTimer); lpTimer = setTimeout(renderLoupePatch, 110); }
+async function renderLoupePatch(){
+  const g = S.pg; if (!g || g.kind !== 'pdf' || !S.ret || !showLoupe()) return;
+  const d = dpr(), sc = S.T.s*LZ*d, half = (LS/2)/(S.T.s*LZ)*1.5;
+  const cx = S.ret.x, cy = S.ret.y;
+  const x0 = Math.max(0, cx-half), y0 = Math.max(0, cy-half), x1 = Math.min(g.w, cx+half), y1 = Math.min(g.h, cy+half);
+  if (x1 <= x0 || y1 <= y0) return;
+  const c = document.createElement('canvas'); c.width = Math.ceil((x1-x0)*sc); c.height = Math.ceil((y1-y0)*sc);
+  const my = rid; if (lpTask) { try{ lpTask.cancel(); }catch(e){} }
+  lpTask = g.render(c, x0, y0, sc);
+  try { await lpTask.promise; } catch(e){ return; }
+  if (my !== rid) return; R.lp = { c, x0, y0, s:sc, z:S.T.s*LZ*d }; drawLoupe();
+}
+
+/* ---------- drawing ---------- */
+let raf = 0;
+function draw(){ if (!raf) raf = requestAnimationFrame(() => { raf = 0; paint(); }); }
+function paint(){
+  const d = dpr(); vctx.setTransform(d,0,0,d,0,0); vctx.clearRect(0,0,W,H);
+  if (!S.pg) return;
+  drawPage(vctx, S.T, d, false);
+  drawOverlay(vctx, S.T, 1, true);
+  drawLoupe();
+}
+function drawPage(ctx, T, d, lp){
+  const g = S.pg; ctx.save(); ctx.transform(T.s,0,0,T.s,T.x,T.y);
+  ctx.fillStyle = '#fff'; ctx.fillRect(0,0,g.w,g.h);
+  if (g.kind === 'img'){
+    ctx.imageSmoothingEnabled = !(T.s*d/(g.img.width/g.w) > 3);
+    ctx.drawImage(g.img, 0, 0, g.w, g.h);
+  } else {
+    ctx.imageSmoothingQuality = 'high';
+    if (R.base) ctx.drawImage(R.base.c, 0, 0, g.w, g.h);
+    if (R.reg) ctx.drawImage(R.reg.c, R.reg.x0, R.reg.y0, R.reg.c.width/R.reg.s, R.reg.c.height/R.reg.s);
+    if (lp && R.lp && Math.abs(R.lp.z - T.s*d) < 1e-6*T.s*d) ctx.drawImage(R.lp.c, R.lp.x0, R.lp.y0, R.lp.c.width/R.lp.s, R.lp.c.height/R.lp.s);
+  }
+  ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.lineWidth = 1/T.s; ctx.strokeRect(0,0,g.w,g.h);
+  ctx.restore();
+}
+
+/* ---------- measuring helpers ---------- */
+const mmPer = () => (S.scales[S.page] || {}).mm || 0;
+const dist = (a,b) => Math.hypot(b.x-a.x, b.y-a.y);
+function pathLen(pts){ let n = 0; for (let i=1;i<pts.length;i++) n += dist(pts[i-1],pts[i]); return n; }
+function fmtLen(mm, unit){
+  unit = unit || S.unit;
+  if (unit === 'm') return (mm/1000).toLocaleString('en-US',{minimumFractionDigits:3,maximumFractionDigits:3}) + ' m';
+  return mm.toLocaleString('en-US',{maximumFractionDigits:1, minimumFractionDigits: mm < 100 ? 1 : 0}) + ' mm';
+}
+function angleDeg(a,b){ let t = Math.atan2(-(b.y-a.y), b.x-a.x)*180/Math.PI; if (t < 0) t += 360; return t; }
+
+function label(ctx, text, x, y, ang, k, color){
+  ctx.save(); ctx.translate(x,y);
+  let a = ang; if (a > Math.PI/2) a -= Math.PI; if (a < -Math.PI/2) a += Math.PI;
+  ctx.rotate(a);
+  ctx.font = `600 ${12*k}px ${MONO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const w = ctx.measureText(text).width + 10*k, h = 18*k;
+  ctx.translate(0, -(7*k + h/2));
+  ctx.fillStyle = 'rgba(255,255,255,.94)'; ctx.strokeStyle = color; ctx.lineWidth = 1*k;
+  ctx.beginPath(); ctx.roundRect(-w/2, -h/2, w, h, 4*k); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = color; ctx.fillText(text, 0, 1*k);
+  ctx.restore();
+}
+function endMark(ctx, p, k, color, filled){
+  ctx.beginPath(); ctx.arc(p.x, p.y, 4.2*k, 0, 7); ctx.fillStyle = '#fff'; ctx.fill();
+  ctx.lineWidth = 1.6*k; ctx.strokeStyle = color; ctx.stroke();
+  ctx.beginPath(); ctx.arc(p.x, p.y, 1.3*k, 0, 7); ctx.fillStyle = color; ctx.fill();
+}
+function polyline(ctx, pts, T, k, color, dash){
+  ctx.beginPath(); pts.forEach((p,i) => { const q = {x:p.x*T.s+T.x, y:p.y*T.s+T.y}; i ? ctx.lineTo(q.x,q.y) : ctx.moveTo(q.x,q.y); });
+  ctx.setLineDash(dash ? [6*k,4*k] : []); ctx.strokeStyle = color; ctx.lineWidth = 1.6*k; ctx.lineJoin = 'round'; ctx.stroke(); ctx.setLineDash([]);
+}
+function drawMeasure(ctx, T, k, pts, mm, color, id, sel, live){
+  const sp = pts.map(p => ({x:p.x*T.s+T.x, y:p.y*T.s+T.y}));
+  if (sel){ polyline(ctx, pts, T, k, 'rgba(200,30,53,.25)'); ctx.lineWidth = 7*k; ctx.strokeStyle = 'rgba(200,30,53,.22)'; ctx.stroke(); }
+  polyline(ctx, pts, T, k, color, live);
+  sp.forEach(p => endMark(ctx, p, k, color));
+  if (!mm) return;
+  for (let i=1;i<sp.length;i++){
+    const a = sp[i-1], b = sp[i], seg = dist(pts[i-1],pts[i])*mm;
+    const txt = (sp.length === 2 && id) ? `#${id}  ${fmtLen(seg)}` : fmtLen(seg);
+    label(ctx, txt, (a.x+b.x)/2, (a.y+b.y)/2, Math.atan2(b.y-a.y, b.x-a.x), k, color);
+  }
+  if (sp.length > 2){
+    const e = sp[sp.length-1]; ctx.save(); ctx.font = `600 ${12*k}px ${MONO}`;
+    const t = `${id ? '#'+id+' ' : ''}Σ ${fmtLen(pathLen(pts)*mm)}`, w = ctx.measureText(t).width + 12*k;
+    ctx.fillStyle = color; ctx.beginPath(); ctx.roundRect(e.x + 10*k, e.y + 8*k, w, 20*k, 5*k); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.textBaseline = 'middle'; ctx.fillText(t, e.x + 16*k, e.y + 18.5*k); ctx.restore();
+  }
+}
+function drawOverlay(ctx, T, k, live){
+  const mm = mmPer(), sc = S.scales[S.page];
+  if (sc && sc.ref){ drawMeasure(ctx, T, k, [sc.ref.a, sc.ref.b], 0, COL.ref, 0, false, true);
+    const a = {x:sc.ref.a.x*T.s+T.x, y:sc.ref.a.y*T.s+T.y}, b = {x:sc.ref.b.x*T.s+T.x, y:sc.ref.b.y*T.s+T.y};
+    label(ctx, '기준 ' + fmtLen(sc.ref.mm), (a.x+b.x)/2, (a.y+b.y)/2, Math.atan2(b.y-a.y,b.x-a.x), k, COL.ref); }
+  S.meas.forEach(m => { if (m.page === S.page) drawMeasure(ctx, T, k, m.pts, mm, COL.dim, m.id, live && S.sel === m.id, false); });
+  if (!live) return;
+  const rub = S.tool === 'cal' ? (S.calA ? [S.calA].concat(S.calB ? [S.calB] : (S.ret ? [S.ret] : [])) : []) : S.cur.concat(S.ret && S.cur.length ? [S.ret] : []);
+  if (rub.length === 1 && S.tool === 'cal') endMark(ctx, {x:rub[0].x*T.s+T.x, y:rub[0].y*T.s+T.y}, k, COL.ref);
+  else if (rub.length === 1) endMark(ctx, {x:rub[0].x*T.s+T.x, y:rub[0].y*T.s+T.y}, k, COL.dim);
+  else if (rub.length > 1) drawMeasure(ctx, T, k, rub, S.tool === 'cal' ? 0 : mm, S.tool === 'cal' ? COL.ref : COL.dim, 0, false, true);
+  if (S.ret && S.tool !== 'pan' && !loupeDrawing){
+    const q = {x:S.ret.x*T.s+T.x, y:S.ret.y*T.s+T.y};
+    ctx.save(); ctx.lineWidth = 1.4; ctx.strokeStyle = COL.cross; ctx.beginPath();
+    ctx.moveTo(q.x-26,q.y); ctx.lineTo(q.x-5,q.y); ctx.moveTo(q.x+5,q.y); ctx.lineTo(q.x+26,q.y);
+    ctx.moveTo(q.x,q.y-26); ctx.lineTo(q.x,q.y-5); ctx.moveTo(q.x,q.y+5); ctx.lineTo(q.x,q.y+26); ctx.stroke();
+    if (S.retSnap){ ctx.strokeStyle = COL.snap; ctx.lineWidth = 2; ctx.strokeRect(q.x-7,q.y-7,14,14); }
+    ctx.restore();
+  }
+}
+let loupeDrawing = false;
+function showLoupe(){ return S.loupe && S.tool !== 'pan' && !!S.ret && !!S.pg; }
+function drawLoupe(){
+  const on = showLoupe(); loupeEl.hidden = !on; if (!on) return;
+  const d = dpr(); if (loupeEl.width !== Math.round(LS*d)){ loupeEl.width = loupeEl.height = Math.round(LS*d); }
+  const sp = toScr(S.ret); loupeEl.classList.toggle('right', sp.x < 190 && sp.y < 200);
+  const s = S.T.s*LZ, T = { s, x:LS/2 - S.ret.x*s, y:LS/2 - S.ret.y*s };
+  lctx.setTransform(d,0,0,d,0,0); lctx.clearRect(0,0,LS,LS); lctx.fillStyle = '#e6e8eb'; lctx.fillRect(0,0,LS,LS);
+  lctx.save(); lctx.beginPath(); lctx.rect(0,0,LS,LS); lctx.clip();
+  drawPage(lctx, T, d, true);
+  loupeDrawing = true; drawOverlay(lctx, T, 1, true); loupeDrawing = false;
+  lctx.strokeStyle = COL.cross; lctx.lineWidth = 1; lctx.beginPath();
+  lctx.moveTo(0,LS/2); lctx.lineTo(LS/2-7,LS/2); lctx.moveTo(LS/2+7,LS/2); lctx.lineTo(LS,LS/2);
+  lctx.moveTo(LS/2,0); lctx.lineTo(LS/2,LS/2-7); lctx.moveTo(LS/2,LS/2+7); lctx.lineTo(LS/2,LS); lctx.stroke();
+  if (S.retSnap){ lctx.strokeStyle = COL.snap; lctx.lineWidth = 2; lctx.strokeRect(LS/2-8,LS/2-8,16,16); }
+  lctx.restore();
+}
+
+function resize(){
+  const r = stage.getBoundingClientRect(); W = Math.max(1, Math.round(r.width)); H = Math.max(1, Math.round(r.height));
+  const d = dpr(); view.width = Math.round(W*d); view.height = Math.round(H*d);
+  if (S.pg && !S.fitS) fitView(); else { draw(); scheduleRegion(); }
+}
+new ResizeObserver(resize).observe(stage);
+/* ---------- aiming, snapping, picking ---------- */
+const ptrs = new Map(); let G = null;
+const rel = e => { const r = view.getBoundingClientRect(); return { x:e.clientX - r.left, y:e.clientY - r.top }; };
+const lastPt = () => S.tool === 'cal' ? (S.calA && !S.calB ? S.calA : null) : (S.cur.length ? S.cur[S.cur.length-1] : null);
+function snapPoints(){
+  const a = []; S.meas.forEach(m => { if (m.page === S.page) a.push(...m.pts); });
+  a.push(...S.cur); const sc = S.scales[S.page]; if (sc && sc.ref) a.push(sc.ref.a, sc.ref.b); if (S.calA) a.push(S.calA);
+  return a;
+}
+function setRet(w, o){
+  o = o || {}; let p = { x:w.x, y:w.y }; S.retSnap = false; if (!o.raw) S.raw = { x:w.x, y:w.y };
+  if (!o.raw){
+    const last = lastPt();
+    if ((S.ortho || S.shift) && last){ if (Math.abs(p.x-last.x) >= Math.abs(p.y-last.y)) p.y = last.y; else p.x = last.x; }
+    if (S.snap){
+      const r = 10/S.T.s; let best = null, bd = r;
+      for (const q of snapPoints()){ const dd = dist(q,p); if (dd < bd){ bd = dd; best = q; } }
+      if (best){ p = { x:best.x, y:best.y }; S.retSnap = true; }
+    }
+  }
+  S.ret = p; updateReadout(); draw(); loupeSoon();
+}
+function aim(px, py, touch){ setRet(toWorld(px, Math.max(4, py - (touch ? 56 : 0)))); }
+function nudge(dx, dy, big){
+  if (!S.ret) setRet(toWorld(W/2, H/2), { raw:true });
+  const st = (big ? 10 : 1)/S.T.s; setRet({ x:S.ret.x + dx*st, y:S.ret.y + dy*st }, { raw:true });
+}
+
+function confirmPoint(){
+  if (S.tool === 'pan' || !S.ret || !S.pg) return;
+  const p = { x:S.ret.x, y:S.ret.y };
+  if (S.tool === 'cal'){
+    if (!S.calA){ S.calA = p; toast('같은 선의 두 번째 점을 정하세요'); }
+    else {
+      if (dist(S.calA, p) < 1e-6){ toast('서로 다른 두 점을 찍어 주세요'); return; }
+      S.calB = p; openSheet('sheetLen'); setTimeout(() => { const i = $('#lenIn'); i.focus(); i.select(); }, 60);
+    }
+  } else {
+    if (!mmPer()){ toast('먼저 축척을 설정하세요'); openSheet('sheetScale'); return; }
+    if (S.cur.length && dist(S.cur[S.cur.length-1], p) < 1e-6) return;
+    S.cur.push(p);
+    if (!S.chain && S.cur.length === 2) finishMeas();
+  }
+  updateAll();
+}
+function finishMeas(){
+  if (S.cur.length < 2){ S.cur = []; return; }
+  const m = { id:S.nextId++, page:S.page, ph:S.pg.h, pts:S.cur }; S.meas.push(m); S.cur = []; S.sel = m.id;
+  toast(`#${m.id}  ${fmtLen(pathLen(m.pts)*mmPer())}`); updateAll();
+}
+function undo(){
+  if (S.tool === 'cal'){ if (S.calB) S.calB = null; else S.calA = null; }
+  else if (S.cur.length) S.cur.pop();
+  else if (S.meas.length){ const m = S.meas.pop(); S.sel = null; toast(`#${m.id} 삭제`); }
+  updateAll();
+}
+function cancelPending(){ S.cur = []; S.calA = S.calB = null; }
+
+/* ---------- pointer gestures ---------- */
+view.addEventListener('contextmenu', e => e.preventDefault());
+view.addEventListener('pointerdown', e => {
+  view.setPointerCapture(e.pointerId); const p = rel(e); ptrs.set(e.pointerId, { x:p.x, y:p.y });
+  if (ptrs.size === 2){
+    if (G && G.type === 'aim' && performance.now() - G.t < 350){ S.ret = G.restore; updateReadout(); }
+    const [a, b] = [...ptrs.values()];
+    G = { type:'pinch', d0:Math.hypot(a.x-b.x, a.y-b.y) || 1, c0:{ x:(a.x+b.x)/2, y:(a.y+b.y)/2 }, T0:{ ...S.T } };
+    S.press = false; return;
+  }
+  if (ptrs.size > 2) return;
+  if (e.pointerType === 'mouse'){
+    if (e.button !== 0 || S.tool === 'pan'){ G = { type:'pan', last:p }; view.classList.add('pan'); }
+    else G = { type:'mclick', start:p, last:p, moved:false };
+  } else if (S.tool === 'pan') G = { type:'pan', last:p };
+  else { G = { type:'aim', t:performance.now(), restore:S.ret ? { ...S.ret } : null }; S.press = true; aim(p.x, p.y, e.pointerType === 'touch'); }
+  e.preventDefault();
+});
+view.addEventListener('pointermove', e => {
+  const p = rel(e); if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, { x:p.x, y:p.y });
+  if (G && G.type === 'pinch' && ptrs.size >= 2){
+    const [a, b] = [...ptrs.values()], d = Math.hypot(a.x-b.x, a.y-b.y) || 1, c = { x:(a.x+b.x)/2, y:(a.y+b.y)/2 };
+    const ns = Math.min(80, Math.max((S.fitS || 1)*0.3, G.T0.s*d/G.d0));
+    const wx = (G.c0.x - G.T0.x)/G.T0.s, wy = (G.c0.y - G.T0.y)/G.T0.s;
+    S.T = { s:ns, x:c.x - wx*ns, y:c.y - wy*ns }; clampView(); draw(); scheduleRegion(); loupeSoon(); return;
+  }
+  if (!G){ if (e.pointerType === 'mouse' && S.tool !== 'pan') setRet(toWorld(p.x, p.y)); return; }
+  if (G.type === 'pan'){ S.T.x += p.x - G.last.x; S.T.y += p.y - G.last.y; G.last = p; clampView(); draw(); scheduleRegion(); }
+  else if (G.type === 'mclick'){
+    if (!G.moved && Math.hypot(p.x - G.start.x, p.y - G.start.y) > 4) G.moved = true;
+    if (G.moved){ S.T.x += p.x - G.last.x; S.T.y += p.y - G.last.y; clampView(); draw(); scheduleRegion(); }
+    else setRet(toWorld(p.x, p.y));
+    G.last = p;
+  } else if (G.type === 'aim') aim(p.x, p.y, e.pointerType === 'touch');
+});
+function endPtr(e){
+  ptrs.delete(e.pointerId); const was = G;
+  if (was && was.type === 'mclick' && e.type === 'pointerup' && !was.moved){ const p = rel(e); setRet(toWorld(p.x, p.y)); confirmPoint(); }
+  if (was && was.type === 'aim'){ S.press = false; loupeSoon(); }
+  if (was && was.type === 'pinch'){ G = ptrs.size ? { type:'none' } : null; scheduleRegion(); loupeSoon(); return; }
+  G = ptrs.size ? { type:'none' } : null;
+  if (was && was.type === 'mclick' && was.moved) scheduleRegion();
+  view.classList.toggle('pan', S.tool === 'pan');
+}
+view.addEventListener('pointerup', endPtr);
+view.addEventListener('pointercancel', endPtr);
+view.addEventListener('wheel', e => {
+  e.preventDefault(); const p = rel(e);
+  zoomAt(p.x, p.y, Math.exp(-e.deltaY*(e.ctrlKey ? 0.01 : 0.0015)));
+}, { passive:false });
+stage.addEventListener('dragover', e => e.preventDefault());
+stage.addEventListener('drop', e => { e.preventDefault(); const f = e.dataTransfer && e.dataTransfer.files[0]; if (f) openFile(f); });
+
+/* ---------- keyboard ---------- */
+addEventListener('keydown', e => {
+  const t = e.target; if (t && (t.tagName === 'INPUT' || t.tagName === 'BUTTON')) return;
+  if (e.key === 'Shift' && !S.shift){ S.shift = true; if (S.raw) setRet(S.raw); return; }
+  const k = e.key.toLowerCase(), step = e.shiftKey;
+  if (k === 'enter' || k === ' '){ confirmPoint(); }
+  else if (k === 'escape'){ cancelPending(); closeSheets(); updateAll(); }
+  else if (k === 'backspace' || k === 'z'){ undo(); }
+  else if (k === 'arrowleft') nudge(-1, 0, step); else if (k === 'arrowright') nudge(1, 0, step);
+  else if (k === 'arrowup') nudge(0, -1, step); else if (k === 'arrowdown') nudge(0, 1, step);
+  else if (k === 'o') toggle('ortho'); else if (k === 's') toggle('snap');
+  else if (k === 'h') setTool('pan'); else if (k === 'm') setTool('meas'); else if (k === 'c') setTool('cal');
+  else if (k === 'f') fitView(); else return;
+  e.preventDefault();
+});
+addEventListener('keyup', e => { if (e.key === 'Shift' && S.shift){ S.shift = false; if (S.raw) setRet(S.raw); } });
+/* ---------- UI state ---------- */
+let toastT = 0;
+function toast(msg, ms){ const t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), ms || 2200); }
+const fmtNum = mm => (S.unit === 'm' ? (mm/1000).toFixed(3) : mm.toLocaleString('en-US',{ maximumFractionDigits:1, minimumFractionDigits:1 }));
+function updateAll(){ updateUI(); updateReadout(); draw(); if (!$('#sheetList').hidden) renderList(); }
+function updateUI(){
+  const sc = S.scales[S.page];
+  $('#scaleTxt').textContent = sc ? sc.label : '축척 설정'; $('#chipScale').classList.toggle('warn', !sc);
+  $('#cnt').textContent = S.meas.length;
+  $('#fname').innerHTML = ''; $('#fname').append(S.name);
+  if (S.sample){ const s = document.createElement('small'); s.textContent = '예시'; $('#fname').append(s); }
+  $('#pager').hidden = S.pages < 2; $('#pgNum').textContent = `${S.page+1}/${S.pages}`;
+  $('#pgPrev').disabled = S.page <= 0; $('#pgNext').disabled = S.page >= S.pages - 1;
+  [['tlPan','pan'],['tlCal','cal'],['tlMeas','meas']].forEach(([id,t]) => $('#'+id).setAttribute('aria-pressed', String(S.tool === t)));
+  [['tgOrtho','ortho'],['tgSnap','snap'],['tgChain','chain'],['tgFine','fine'],['tgLoupe','loupe']].forEach(([id,k]) => $('#'+id).setAttribute('aria-pressed', String(!!S[k])));
+  $('#pad').hidden = !(S.fine && S.tool !== 'pan');
+  $('#btnDone').hidden = !(S.chain && S.cur.length >= 2 && S.tool === 'meas');
+  $('#btnUndo').disabled = !(S.cur.length || S.calA || S.meas.length);
+  $('#btnPick').disabled = S.tool === 'pan';
+  view.classList.toggle('pan', S.tool === 'pan');
+  const coarse = matchMedia('(pointer:coarse)').matches;
+  const picks = { meas:'점 찍기', cal:(S.calA ? '끝점 찍기' : '시작점 찍기'), pan:'점 찍기' };
+  $('#btnPick').lastChild.textContent = picks[S.tool];
+}
+function updateReadout(){
+  const lab = $('#roLabel'), val = $('#roVal'), det = $('#roDet'); det.hidden = true; val.classList.remove('hint');
+  const hint = (l, t) => { lab.textContent = l; val.classList.add('hint'); val.textContent = t; };
+  const coarse = matchMedia('(pointer:coarse)').matches, mm = mmPer();
+  if (S.tool === 'pan') return hint('이동', coarse ? '한 손가락으로 끌어 이동, 두 손가락으로 확대/축소' : '드래그로 이동, 휠로 확대/축소');
+  if (S.tool === 'cal') return hint('축척 보정', !S.calA ? '길이를 아는 선의 시작점을 정하고 ‘점 찍기’를 누르세요' : !S.calB ? '같은 선의 끝점을 정하세요' : '실제 길이를 입력하세요');
+  if (!mm) return hint('측정', '먼저 위쪽 축척 버튼으로 축척을 설정하세요');
+  let pts = S.cur.concat(S.ret && S.cur.length ? [S.ret] : []), done = false;
+  if (pts.length < 2){
+    const m = !S.cur.length && S.meas.find(x => x.id === S.sel && x.page === S.page);
+    if (m){ pts = m.pts; done = m.id; } else return hint('측정', S.cur.length ? '다음 점을 정하세요' : (coarse ? '화면을 누르고 끌어 십자선을 맞춘 뒤 ‘점 찍기’' : '시작점을 클릭하세요'));
+  }
+  const a = pts[pts.length-2], b = pts[pts.length-1], total = pathLen(pts)*mm;
+  lab.textContent = (done ? `#${done} · ` : '') + (pts.length > 2 ? `연속 합계 ${pts.length-1}구간` : '거리') + ` · 탭하면 ${S.unit === 'mm' ? 'm' : 'mm'}로`;
+  val.textContent = fmtLen(total);
+  det.hidden = false;
+  det.innerHTML = `<span>ΔX</span><b>${fmtNum((b.x-a.x)*mm)}</b><span>ΔY</span><b>${fmtNum(-(b.y-a.y)*mm)}</b><span>∠</span><b>${angleDeg(a,b).toFixed(1)}°</b>`;
+}
+function setTool(t){ cancelPending(); S.tool = t; if (t === 'pan') S.press = false; updateAll(); drawLoupe(); }
+function toggle(k){ S[k] = !S[k]; if (k === 'snap' || k === 'ortho') S.raw && S.ret && setRet(S.raw); updateAll(); drawLoupe(); }
+
+/* ---------- sheets ---------- */
+const sheets = ['sheetScale','sheetLen','sheetList','sheetImg'];
+function openSheet(id){
+  sheets.forEach(s => $('#'+s).hidden = s !== id); $('#scrim').hidden = false;
+  if (id === 'sheetScale') fillScale(); if (id === 'sheetList') renderList();
+}
+function closeSheets(){
+  if ($('#sheetLen').hidden === false && S.calB){ S.calB = null; S.calA = null; updateAll(); }
+  sheets.forEach(s => $('#'+s).hidden = true); $('#scrim').hidden = true;
+}
+document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closeSheets));
+$('#scrim').addEventListener('click', closeSheets);
+
+function fillScale(){
+  const sc = S.scales[S.page], pdf = S.pg && S.pg.kind === 'pdf';
+  $('#scaleStatus').textContent = sc ? `현재 축척: ${sc.label} (1 단위 = ${sc.mm.toFixed(4)} mm)` : '측정하려면 먼저 실제 길이를 알려주세요.';
+  $('#ratioBox').hidden = !pdf;
+  const box = $('#ratioChips'); box.innerHTML = '';
+  [20,50,100,200,500].forEach(n => { const b = document.createElement('button'); b.className = 'chip'; b.textContent = '1:' + n; b.onclick = () => applyRatio(n); box.append(b); });
+}
+function applyRatio(n){
+  if (!(n >= 1)){ toast('축척 값을 확인하세요'); return; }
+  S.scales[S.page] = { mm:n*25.4/72, label:'1:' + n }; closeSheets(); toast(`축척 1:${n} 적용 · 인쇄가 축소됐다면 보정을 권장합니다`, 3200); updateAll();
+}
+$('#btnRatio').addEventListener('click', () => applyRatio(parseFloat($('#ratioIn').value)));
+$('#btnCalStart').addEventListener('click', () => { closeSheets(); setTool('cal'); toast('길이를 아는 선의 시작점을 정하세요'); });
+$('#chipScale').addEventListener('click', () => openSheet('sheetScale'));
+$('#lenUnit').addEventListener('click', e => { const b = e.currentTarget, m = b.textContent === 'mm'; b.textContent = m ? 'm' : 'mm'; b.setAttribute('aria-pressed', String(m)); });
+$('#btnLenOk').addEventListener('click', () => {
+  const v = parseFloat($('#lenIn').value); if (!(v > 0)){ toast('0보다 큰 길이를 입력하세요'); return; }
+  const mmv = $('#lenUnit').textContent === 'm' ? v*1000 : v, a = S.calA, b = S.calB;
+  S.scales[S.page] = { mm:mmv/dist(a,b), label:'보정됨', ref:{ a, b, mm:mmv } };
+  S.calA = S.calB = null; closeSheets(); S.tool = 'meas'; toast(`축척 설정됨 · 기준 ${fmtLen(mmv)}`); updateAll();
+});
+$('#lenIn').addEventListener('keydown', e => { if (e.key === 'Enter') $('#btnLenOk').click(); });
+$('#ratioIn').addEventListener('keydown', e => { if (e.key === 'Enter') $('#btnRatio').click(); });
+
+/* ---------- list & export ---------- */
+function renderList(){
+  const box = $('#mlist'); box.innerHTML = '';
+  if (!S.meas.length){ const d = document.createElement('div'); d.className = 'empty'; d.textContent = '아직 측정한 항목이 없습니다.'; box.append(d); }
+  let sum = 0, n = 0;
+  S.meas.forEach(m => {
+    const k = (S.scales[m.page] || {}).mm; if (!k) return;
+    const a = m.pts[0], b = m.pts[m.pts.length-1], len = pathLen(m.pts)*k; sum += len; n++;
+    const r = document.createElement('div'); r.className = 'mrow'; r.setAttribute('aria-current', String(S.sel === m.id));
+    r.innerHTML = '<div class="id"></div><button class="go"><div class="v"></div><div class="d"></div></button><button class="btn danger" aria-label="삭제"><svg class="ic"></svg></button>';
+    r.querySelector('.id').textContent = m.id; r.querySelector('.v').textContent = fmtLen(len);
+    r.querySelector('.d').textContent = `p.${m.page+1} · ΔX ${fmtNum((b.x-a.x)*k)} · ΔY ${fmtNum(-(b.y-a.y)*k)} · ∠${angleDeg(a,b).toFixed(1)}°`;
+    const ic = r.querySelector('svg'); ic.setAttribute('viewBox','0 0 24 24'); ic.innerHTML = ICONS.trash;
+    r.querySelector('.go').onclick = async () => {
+      S.sel = m.id; closeSheets(); if (m.page !== S.page) await setPage(m.page);
+      const c = { x:(a.x+b.x)/2, y:(a.y+b.y)/2 }; S.T.x = W/2 - c.x*S.T.s; S.T.y = H/2 - c.y*S.T.s; clampView(); updateAll(); scheduleRegion();
+    };
+    r.querySelector('.btn').onclick = () => { S.meas = S.meas.filter(x => x.id !== m.id); if (S.sel === m.id) S.sel = null; updateAll(); };
+    box.append(r);
+  });
+  $('#sumRow').hidden = n < 2; $('#sumVal').textContent = fmtLen(sum);
+}
+const HEAD = ['Item ID','Page','Points','Start X (mm)','Start Y (mm)','End X (mm)','End Y (mm)','ΔX (mm)','ΔY (mm)','Angle (deg)','Length (mm)'];
+function tableRows(){
+  return S.meas.filter(m => S.scales[m.page]).map(m => {
+    const k = S.scales[m.page].mm, a = m.pts[0], b = m.pts[m.pts.length-1];
+    const X = p => p.x*k, Y = p => (m.ph - p.y)*k;     // origin = page bottom-left, Y up
+    return [m.id, m.page+1, m.pts.length, X(a), Y(a), X(b), Y(b), (b.x-a.x)*k, -(b.y-a.y)*k, angleDeg(a,b), pathLen(m.pts)*k]
+      .map((v,i) => i < 3 ? v : Math.round(v*100)/100);
+  });
+}
+const toText = sep => [HEAD].concat(tableRows()).map(r => r.join(sep)).join('\r\n');
+async function copyText(t){
+  try { await navigator.clipboard.writeText(t); return true; } catch(e){}
+  try { const ta = document.createElement('textarea'); ta.value = t; ta.style.cssText = 'position:fixed;opacity:0'; document.body.append(ta); ta.select(); const ok = document.execCommand('copy'); ta.remove(); return ok; } catch(e){ return false; }
+}
+let DL = null;
+function dlAnchor(name, data){
+  const blob = data instanceof Blob ? data : new Blob([data], { type:'text/csv;charset=utf-8' });
+  const u = URL.createObjectURL(blob), a = document.createElement('a'); a.href = u; a.download = name; document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(u), 5000); toast('저장했습니다');
+}
+(async () => { try { if (window.claude && window.claude.use) DL = await window.claude.use('downloads'); } catch(e){} })();
+async function saveFile(name, data, fallbackText){
+  if (!DL){ dlAnchor(name, data); return; }
+  if (false){ if (fallbackText && await copyText(fallbackText)) toast('저장 기능이 없어 클립보드에 복사했습니다'); else toast('이 화면에서는 저장할 수 없습니다'); return; }
+  try { const r = await DL.save({ filename:name, data }); toast(r.status === 'saved' ? '저장했습니다' : '전달했습니다'); }
+  catch(e){ if (!e || e.code !== 'declined') toast('저장하지 못했습니다'); }
+}
+$('#btnCopy').addEventListener('click', async () => {
+  if (!tableRows().length) return toast('복사할 측정이 없습니다');
+  toast(await copyText(toText('\t')) ? '복사했습니다. 엑셀에 붙여넣으세요' : '복사하지 못했습니다');
+});
+$('#btnCsv').addEventListener('click', () => { if (!tableRows().length) return toast('저장할 측정이 없습니다'); saveFile('measurements.csv', '﻿' + toText(','), toText('\t')); });
+$('#btnPng').addEventListener('click', async () => {
+  const g = S.pg; if (!g) return;
+  toast('이미지를 만드는 중…', 6000);
+  try {
+    const sc = Math.min(3, Math.sqrt(18e6/(g.w*g.h))), c = document.createElement('canvas');
+    c.width = Math.ceil(g.w*sc); c.height = Math.ceil(g.h*sc); const x = c.getContext('2d');
+    if (g.kind === 'pdf'){ await g.render(c, 0, 0, sc).promise; } else { x.fillStyle = '#fff'; x.fillRect(0,0,c.width,c.height); x.drawImage(g.img, 0, 0, c.width, c.height); }
+    drawOverlay(x, { x:0, y:0, s:sc }, Math.max(1, c.width/1100), false);
+    const base = S.name.replace(/\.[^.]+$/, '') || 'drawing';
+    if (true){ const blob = await new Promise(r => c.toBlob(r, 'image/png')); await saveFile(base + '_dim.png', blob); }
+    else { $('#pngimg').src = c.toDataURL('image/png'); openSheet('sheetImg'); }
+  } catch(e){ toast('이미지를 만들지 못했습니다'); }
+});
+$('#btnClear').addEventListener('click', e => {
+  const b = e.currentTarget;
+  if (!b.dataset.arm){ b.dataset.arm = '1'; b.lastChild.textContent = '한 번 더 누르면 삭제'; setTimeout(() => { delete b.dataset.arm; b.lastChild.textContent = '모두 삭제'; }, 2500); return; }
+  delete b.dataset.arm; b.lastChild.textContent = '모두 삭제'; S.meas = []; S.sel = null; S.cur = []; updateAll();
+});
+$('#btnList').addEventListener('click', () => openSheet('sheetList'));
+
+/* ---------- controls ---------- */
+$('#tlPan').onclick = () => setTool('pan'); $('#tlCal').onclick = () => setTool('cal'); $('#tlMeas').onclick = () => setTool('meas');
+$('#tgOrtho').onclick = () => toggle('ortho'); $('#tgSnap').onclick = () => toggle('snap'); $('#tgChain').onclick = () => { toggle('chain'); if (!S.chain && S.cur.length >= 2) finishMeas(); };
+$('#tgFine').onclick = () => toggle('fine'); $('#tgLoupe').onclick = () => toggle('loupe'); $('#tgFit').onclick = () => fitView();
+$('#btnPick').onclick = confirmPoint; $('#btnUndo').onclick = undo; $('#btnDone').onclick = () => finishMeas();
+$('#roVal').onclick = () => { if ($('#roVal').classList.contains('hint')) return; S.unit = S.unit === 'mm' ? 'm' : 'mm'; updateAll(); };
+$('#pgPrev').onclick = () => setPage(S.page - 1); $('#pgNext').onclick = () => setPage(S.page + 1);
+document.querySelectorAll('#pad button').forEach(b => {
+  const [dx, dy] = b.dataset.n.split(',').map(Number); let t1 = 0, t2 = 0; const stop = () => { clearTimeout(t1); clearInterval(t2); };
+  b.addEventListener('pointerdown', e => { e.preventDefault(); nudge(dx, dy, false); stop(); t1 = setTimeout(() => { t2 = setInterval(() => nudge(dx, dy, false), 55); }, 350); });
+  ['pointerup','pointerleave','pointercancel'].forEach(ev => b.addEventListener(ev, stop));
+});
+$('#btnOpen').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); $('#file').click(); } });
+$('#file').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) openFile(f); });
+
+/* ---------- files ---------- */
+async function setPage(i){
+  if (S.doc){ S.pg = await makePdfPage(S.doc, i); }
+  S.page = i; cancelPending(); S.ret = null; S.raw = null; S.fitS = 0; R.base = R.reg = R.lp = null; rid++;
+  resize(); updateAll(); if (S.pg.kind === 'pdf') await renderBase();
+}
+async function openFile(f){
+  try {
+    toast('파일을 여는 중…', 8000);
+    const isPdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+    let doc = null, pg;
+    if (isPdf){
+      if (typeof pdfjsLib === 'undefined') throw new Error('PDF 엔진을 불러오지 못했습니다. 네트워크를 확인하세요.');
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      doc = await pdfjsLib.getDocument({ data:await f.arrayBuffer() }).promise; pg = await makePdfPage(doc, 0);
+    } else if (f.type.startsWith('image/')){
+      const url = URL.createObjectURL(f), img = new Image(); img.src = url; await img.decode(); pg = makeImgPage(img, img.naturalWidth, img.naturalHeight);
+    } else throw new Error('PDF 또는 이미지 파일을 선택하세요.');
+    Object.assign(S, { doc, pg, name:f.name, page:0, pages:doc ? doc.numPages : 1, scales:{}, meas:[], nextId:1, sel:null, sample:false, tool:'meas', fitS:0 });
+    cancelPending(); S.ret = null; S.raw = null; R.base = R.reg = R.lp = null; rid++;
+    resize(); updateAll(); if (doc) await renderBase();
+    toast(''); $('#toast').classList.remove('on'); openSheet('sheetScale');
+  } catch(e){ toast('파일을 열 수 없습니다: ' + (e.message || e), 4500); }
+}
+
+/* ---------- init ---------- */
+function loadSample(){
+  const c = makeSample();
+  Object.assign(S, { doc:null, pg:makeImgPage(c, 1600, 1100), name:'예시 도면', page:0, pages:1, sample:true, fitS:0,
+    scales:{ 0:{ mm:10, label:'1:100' } }, nextId:3, sel:1, tool:'meas',
+    meas:[ { id:1, page:0, ph:1100, pts:[{x:550,y:550},{x:700,y:400}] }, { id:2, page:0, ph:1100, pts:[{x:700,y:400},{x:980,y:400}] } ] });
+}
+loadSample(); resize(); updateAll();
+if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+</script>
+
+</body>
+</html>
