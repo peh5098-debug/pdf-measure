@@ -28,6 +28,7 @@
   --bg:#14171c; --chrome:#1d2127; --chrome-2:#272c34; --ink:#e9ecf1; --muted:#9ba5b3; --line:#363d48;
   --accent:#86a8ff; --accent-ink:#0a1226; --accent-soft:#23325c; --warn:#ffb067; --warn-soft:#3b2a17; --dim:#ff7185; color-scheme:dark}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html,body{height:100%}
 body{margin:0;display:flex;flex-direction:column;background:var(--bg);color:var(--ink);font:14px/1.4 var(--sans);overflow:hidden;-webkit-tap-highlight-color:transparent}
 button,input{font:inherit;color:inherit}
@@ -69,15 +70,16 @@ label.btn{cursor:pointer;user-select:none}
 .ro-label{font-size:12px;color:var(--muted)}
 .ro-val{font:600 26px/1.15 var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
 .ro-val.hint{font:500 14px/1.4 var(--sans);white-space:normal;cursor:default}
-.ro-det{display:grid;grid-template-columns:auto auto;gap:1px 8px;font:500 12px var(--mono);font-variant-numeric:tabular-nums;color:var(--muted)}
-.ro-det b{font-weight:500;color:var(--ink);text-align:right}
+.ro-det{display:flex;flex-wrap:wrap;gap:2px 12px;margin-top:2px;font:500 12px var(--mono);font-variant-numeric:tabular-nums;color:var(--muted)}
+.ro-det i{font-style:normal;white-space:nowrap}
+.ro-det b{font-weight:500;color:var(--ink)}
 .ro-btns{display:flex;gap:6px}
 .dock{background:var(--chrome);border-top:1px solid var(--line);padding-block:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:8px}
 .toggles{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
 .toggles::-webkit-scrollbar{display:none}
 .row{display:flex;gap:8px;align-items:stretch}
 .seg{display:flex;flex:1.3;min-width:0;background:var(--chrome-2);border:1px solid var(--line);border-radius:12px;padding:3px;gap:2px}
-.seg button{flex:1;min-width:0;height:44px;border:0;background:transparent;border-radius:9px;display:flex;align-items:center;justify-content:center;gap:5px;font-weight:500;color:var(--muted)}
+.seg button{flex:1;min-width:0;white-space:nowrap;height:44px;border:0;background:transparent;border-radius:9px;display:flex;align-items:center;justify-content:center;gap:5px;font-weight:500;color:var(--muted)}
 .seg button[aria-pressed="true"]{background:var(--chrome);color:var(--accent);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.22)}
 .confirm{flex:1;height:auto;min-height:52px;font-size:16px;border-radius:12px}
 .scrim{position:fixed;inset:0;background:rgba(8,12,18,.5);z-index:20}
@@ -102,6 +104,7 @@ label.btn{cursor:pointer;user-select:none}
 .acts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
 .sum{display:flex;justify-content:space-between;font:600 14px var(--mono);margin-top:6px}
 #pngimg{max-width:100%;border:1px solid var(--line);border-radius:8px;background:#fff}
+@media (max-width:520px){.seg button{flex-direction:column;gap:1px;font-size:12px;height:54px}.seg{flex:1.4}.confirm{flex:1 1 0}}
 @media (min-width:760px){.seg button{height:40px}.top .fname small{display:inline}}
 @media (prefers-reduced-motion:reduce){.toast{transition:none}}
 </style>
@@ -134,9 +137,11 @@ label.btn{cursor:pointer;user-select:none}
       <div class="ro-main">
         <div class="ro-label" id="roLabel">거리</div>
         <div class="ro-val" id="roVal" title="탭하면 mm / m 전환">—</div>
+        <div class="ro-det" id="roDet" hidden></div>
       </div>
-      <div class="ro-det" id="roDet" hidden></div>
       <div class="ro-btns">
+        <button class="btn danger" id="btnDel" aria-label="선택한 측정 삭제" title="삭제" hidden><svg class="ic" data-ic="trash"></svg></button>
+        <button class="btn" id="btnReset" aria-label="선과 숫자 위치 초기화" title="위치 초기화" hidden><svg class="ic" data-ic="reset"></svg></button>
         <button class="btn" id="btnUndo" aria-label="되돌리기"><svg class="ic" data-ic="undo"></svg></button>
         <button class="btn" id="btnDone" aria-label="연속 측정 완료" hidden><svg class="ic" data-ic="check"></svg>완료</button>
       </div>
@@ -155,7 +160,7 @@ label.btn{cursor:pointer;user-select:none}
   </div>
   <div class="row">
     <div class="seg" role="group" aria-label="도구">
-      <button id="tlPan" aria-pressed="false"><svg class="ic" data-ic="hand"></svg>이동</button>
+      <button id="tlPan" aria-pressed="false"><svg class="ic" data-ic="hand"></svg>이동·선택</button>
       <button id="tlCal" aria-pressed="false"><svg class="ic" data-ic="ruler"></svg>보정</button>
       <button id="tlMeas" aria-pressed="true"><svg class="ic" data-ic="target"></svg>측정</button>
     </div>
@@ -234,7 +239,8 @@ const ICONS = {
   undo:'<path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>',
   copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/>',
   down2:'<path d="M12 4v11m-5-5 5 5 5-5M5 20h14"/>', img:'<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m21 16-5-5-9 9"/>',
-  trash:'<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>'
+  trash:'<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+  reset:'<path d="M4 12a8 8 0 1 0 2.6-5.9M4 4v4.5h4.5"/>'
 };
 ICONS.down = ICONS.down; // arrow chevron used by pad
 document.querySelectorAll('svg[data-ic]').forEach(s => {
@@ -248,7 +254,7 @@ const S = {
   pg: null, name:'', doc:null, page:0, pages:1,
   T:{x:0,y:0,s:1}, scales:{}, meas:[], nextId:1,
   tool:'meas', ortho:false, snap:true, chain:false, fine:matchMedia('(pointer:coarse)').matches, loupe:true, unit:'mm',
-  cur:[], calA:null, calB:null, ret:null, retSnap:false, press:false, sel:null, sample:false
+  cur:[], calA:null, calB:null, ret:null, retSnap:false, press:false, sel:null, sample:false, deleted:[]
 };
 const R = { base:null, reg:null, lp:null };   // rendered bitmaps: whole-page base, visible region, loupe patch
 let W = 0, H = 0;
@@ -401,19 +407,22 @@ function fmtLen(mm, unit){
 }
 function angleDeg(a,b){ let t = Math.atan2(-(b.y-a.y), b.x-a.x)*180/Math.PI; if (t < 0) t += 360; return t; }
 
-function label(ctx, text, x, y, ang, k, color){
-  ctx.save(); ctx.translate(x,y);
+const HITS = [];
+function label(ctx, text, x, y, ang, k, color, free, bold){
   let a = ang; if (a > Math.PI/2) a -= Math.PI; if (a < -Math.PI/2) a += Math.PI;
-  ctx.rotate(a);
-  ctx.font = `600 ${12*k}px ${MONO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  const w = ctx.measureText(text).width + 10*k, h = 18*k;
-  ctx.translate(0, -(7*k + h/2));
-  ctx.fillStyle = 'rgba(255,255,255,.94)'; ctx.strokeStyle = color; ctx.lineWidth = 1*k;
+  ctx.save(); ctx.font = `600 ${12*k}px ${MONO}`;
+  const w = ctx.measureText(text).width + 10*k, h = 18*k, d = free ? 0 : 7*k + h/2;
+  const cx = x + d*Math.sin(a), cy = y - d*Math.cos(a);
+  ctx.translate(cx, cy); ctx.rotate(a); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(255,255,255,.94)'; ctx.strokeStyle = color; ctx.lineWidth = (bold ? 2.2 : 1)*k;
   ctx.beginPath(); ctx.roundRect(-w/2, -h/2, w, h, 4*k); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = color; ctx.fillText(text, 0, 1*k);
-  ctx.restore();
+  ctx.fillStyle = color; ctx.fillText(text, 0, 1*k); ctx.restore();
+  return { cx, cy, a, w, h };
 }
-function endMark(ctx, p, k, color, filled){
+function leader(ctx, x1, y1, x2, y2, k, color){
+  ctx.save(); ctx.globalAlpha = .65; ctx.strokeStyle = color; ctx.lineWidth = .9*k; ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); ctx.restore();
+}
+function endMark(ctx, p, k, color){
   ctx.beginPath(); ctx.arc(p.x, p.y, 4.2*k, 0, 7); ctx.fillStyle = '#fff'; ctx.fill();
   ctx.lineWidth = 1.6*k; ctx.strokeStyle = color; ctx.stroke();
   ctx.beginPath(); ctx.arc(p.x, p.y, 1.3*k, 0, 7); ctx.fillStyle = color; ctx.fill();
@@ -422,30 +431,46 @@ function polyline(ctx, pts, T, k, color, dash){
   ctx.beginPath(); pts.forEach((p,i) => { const q = {x:p.x*T.s+T.x, y:p.y*T.s+T.y}; i ? ctx.lineTo(q.x,q.y) : ctx.moveTo(q.x,q.y); });
   ctx.setLineDash(dash ? [6*k,4*k] : []); ctx.strokeStyle = color; ctx.lineWidth = 1.6*k; ctx.lineJoin = 'round'; ctx.stroke(); ctx.setLineDash([]);
 }
-function drawMeasure(ctx, T, k, pts, mm, color, id, sel, live){
-  const sp = pts.map(p => ({x:p.x*T.s+T.x, y:p.y*T.s+T.y}));
-  if (sel){ polyline(ctx, pts, T, k, 'rgba(200,30,53,.25)'); ctx.lineWidth = 7*k; ctx.strokeStyle = 'rgba(200,30,53,.22)'; ctx.stroke(); }
-  polyline(ctx, pts, T, k, color, live);
+function drawMeasure(ctx, T, k, pts, mm, color, id, sel, live, m){
+  const off = (m && m.off) || { x:0, y:0 }, lo = (m && m.lo) || {};
+  const shifted = pts.map(p => ({ x:p.x + off.x, y:p.y + off.y }));
+  const sp = shifted.map(p => ({ x:p.x*T.s + T.x, y:p.y*T.s + T.y })), op = pts.map(p => ({ x:p.x*T.s + T.x, y:p.y*T.s + T.y }));
+  if (Math.hypot(off.x, off.y)*T.s > 3){                       // dimension line moved away: extension lines to the measured points
+    ctx.save(); ctx.strokeStyle = color; ctx.globalAlpha = .55; ctx.lineWidth = .9*k; ctx.setLineDash([3*k, 3*k]); ctx.beginPath();
+    op.forEach((p,i) => { ctx.moveTo(p.x, p.y); ctx.lineTo(sp[i].x, sp[i].y); }); ctx.stroke(); ctx.restore();
+    op.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 2.2*k, 0, 7); ctx.fillStyle = color; ctx.fill(); });
+  }
+  if (sel){ polyline(ctx, shifted, T, k, 'rgba(200,30,53,.25)'); ctx.lineWidth = 7*k; ctx.strokeStyle = 'rgba(200,30,53,.22)'; ctx.stroke(); }
+  polyline(ctx, shifted, T, k, color, live && !m);
   sp.forEach(p => endMark(ctx, p, k, color));
   if (!mm) return;
-  for (let i=1;i<sp.length;i++){
-    const a = sp[i-1], b = sp[i], seg = dist(pts[i-1],pts[i])*mm;
+  const rec = live && m && !loupeDrawing;
+  const place = (idx, cx, cy) => { const o = lo[idx]; return o ? { x:cx + o.x*T.s, y:cy + o.y*T.s, free:true } : { x:cx, y:cy, free:false }; };
+  for (let i = 1; i < sp.length; i++){
+    const a = sp[i-1], b = sp[i], seg = dist(pts[i-1], pts[i])*mm;
     const txt = (sp.length === 2 && id) ? `#${id}  ${fmtLen(seg)}` : fmtLen(seg);
-    label(ctx, txt, (a.x+b.x)/2, (a.y+b.y)/2, Math.atan2(b.y-a.y, b.x-a.x), k, color);
+    const mx = (a.x + b.x)/2, my = (a.y + b.y)/2, q = place(i-1, mx, my);
+    if (q.free) leader(ctx, mx, my, q.x, q.y, k, color);
+    const r = label(ctx, txt, q.x, q.y, Math.atan2(b.y-a.y, b.x-a.x), k, color, q.free, sel);
+    if (rec) HITS.push({ m, idx:i-1, ...r });
   }
   if (sp.length > 2){
-    const e = sp[sp.length-1]; ctx.save(); ctx.font = `600 ${12*k}px ${MONO}`;
-    const t = `${id ? '#'+id+' ' : ''}Σ ${fmtLen(pathLen(pts)*mm)}`, w = ctx.measureText(t).width + 12*k;
-    ctx.fillStyle = color; ctx.beginPath(); ctx.roundRect(e.x + 10*k, e.y + 8*k, w, 20*k, 5*k); ctx.fill();
-    ctx.fillStyle = '#fff'; ctx.textBaseline = 'middle'; ctx.fillText(t, e.x + 16*k, e.y + 18.5*k); ctx.restore();
+    const e = sp[sp.length-1], idx = sp.length-1; ctx.save(); ctx.font = `600 ${12*k}px ${MONO}`;
+    const t = `${id ? '#'+id+' ' : ''}Σ ${fmtLen(pathLen(pts)*mm)}`, w = ctx.measureText(t).width + 12*k, h = 20*k;
+    const q = place(idx, e.x + 10*k + w/2, e.y + 8*k + h/2);
+    if (q.free) leader(ctx, e.x, e.y, q.x, q.y, k, color);
+    ctx.fillStyle = color; ctx.beginPath(); ctx.roundRect(q.x - w/2, q.y - h/2, w, h, 5*k); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(t, q.x, q.y + .5*k); ctx.restore();
+    if (rec) HITS.push({ m, idx, cx:q.x, cy:q.y, a:0, w, h });
   }
 }
 function drawOverlay(ctx, T, k, live){
+  if (live && !loupeDrawing) HITS.length = 0;
   const mm = mmPer(), sc = S.scales[S.page];
   if (sc && sc.ref){ drawMeasure(ctx, T, k, [sc.ref.a, sc.ref.b], 0, COL.ref, 0, false, true);
     const a = {x:sc.ref.a.x*T.s+T.x, y:sc.ref.a.y*T.s+T.y}, b = {x:sc.ref.b.x*T.s+T.x, y:sc.ref.b.y*T.s+T.y};
     label(ctx, '기준 ' + fmtLen(sc.ref.mm), (a.x+b.x)/2, (a.y+b.y)/2, Math.atan2(b.y-a.y,b.x-a.x), k, COL.ref); }
-  S.meas.forEach(m => { if (m.page === S.page) drawMeasure(ctx, T, k, m.pts, mm, COL.dim, m.id, live && S.sel === m.id, false); });
+  S.meas.forEach(m => { if (m.page === S.page) drawMeasure(ctx, T, k, m.pts, mm, COL.dim, m.id, live && S.sel === m.id, live, m); });
   if (!live) return;
   const rub = S.tool === 'cal' ? (S.calA ? [S.calA].concat(S.calB ? [S.calB] : (S.ret ? [S.ret] : [])) : []) : S.cur.concat(S.ret && S.cur.length ? [S.ret] : []);
   if (rub.length === 1 && S.tool === 'cal') endMark(ctx, {x:rub[0].x*T.s+T.x, y:rub[0].y*T.s+T.y}, k, COL.ref);
@@ -535,12 +560,47 @@ function finishMeas(){
   toast(`#${m.id}  ${fmtLen(pathLen(m.pts)*mmPer())}`); updateAll();
 }
 function undo(){
+  if (S.tool === 'pan' && S.deleted.length){ const r = S.deleted.pop(); S.meas.push(r); S.sel = r.id; toast(`#${r.id} 복원됨`); updateAll(); return; }
   if (S.tool === 'cal'){ if (S.calB) S.calB = null; else S.calA = null; }
   else if (S.cur.length) S.cur.pop();
   else if (S.meas.length){ const m = S.meas.pop(); S.sel = null; toast(`#${m.id} 삭제`); }
   updateAll();
 }
 function cancelPending(){ S.cur = []; S.calA = S.calB = null; }
+
+/* ---------- select & move measurements ---------- */
+function segDist(px, py, a, b){
+  const vx = b.x-a.x, vy = b.y-a.y, L = vx*vx + vy*vy; let t = L ? ((px-a.x)*vx + (py-a.y)*vy)/L : 0; t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (a.x + t*vx), py - (a.y + t*vy));
+}
+function hitTest(px, py){
+  for (let i = HITS.length-1; i >= 0; i--){
+    const h = HITS[i], dx = px - h.cx, dy = py - h.cy, c = Math.cos(h.a), sn = Math.sin(h.a);
+    if (Math.abs(dx*c + dy*sn) <= h.w/2 + 8 && Math.abs(-dx*sn + dy*c) <= h.h/2 + 8) return { m:h.m, kind:'label', idx:h.idx };
+  }
+  let best = null, bd = 16;
+  for (let i = S.meas.length-1; i >= 0; i--){
+    const m = S.meas[i]; if (m.page !== S.page) continue; const o = m.off || { x:0, y:0 };
+    for (let j = 1; j < m.pts.length; j++){
+      const a = toScr({ x:m.pts[j-1].x + o.x, y:m.pts[j-1].y + o.y }), b = toScr({ x:m.pts[j].x + o.x, y:m.pts[j].y + o.y }), d = segDist(px, py, a, b);
+      if (d < bd){ bd = d; best = { m, kind:'line' }; }
+    }
+  }
+  return best;
+}
+function beginSelect(p){
+  const h = hitTest(p.x, p.y);
+  if (h){ S.sel = h.m.id; updateAll(); return { type:'drag', kind:h.kind, m:h.m, idx:h.idx, last:p }; }
+  return { type:'pan', last:p, start:p, moved:false, sel:true };
+}
+function delSel(){
+  const i = S.meas.findIndex(m => m.id === S.sel); if (i < 0) return;
+  const m = S.meas.splice(i, 1)[0]; S.deleted.push(m); S.sel = null; toast(`#${m.id} 삭제됨 · 되돌리기 버튼으로 복원`); updateAll();
+}
+function resetSel(){
+  const m = S.meas.find(x => x.id === S.sel); if (!m) return;
+  m.off = { x:0, y:0 }; m.lo = {}; toast('선과 숫자 위치를 처음대로 되돌렸습니다'); updateAll();
+}
 
 /* ---------- pointer gestures ---------- */
 view.addEventListener('contextmenu', e => e.preventDefault());
@@ -554,9 +614,10 @@ view.addEventListener('pointerdown', e => {
   }
   if (ptrs.size > 2) return;
   if (e.pointerType === 'mouse'){
-    if (e.button !== 0 || S.tool === 'pan'){ G = { type:'pan', last:p }; view.classList.add('pan'); }
+    if (e.button !== 0){ G = { type:'pan', last:p }; view.classList.add('pan'); }
+    else if (S.tool === 'pan') G = beginSelect(p);
     else G = { type:'mclick', start:p, last:p, moved:false };
-  } else if (S.tool === 'pan') G = { type:'pan', last:p };
+  } else if (S.tool === 'pan') G = beginSelect(p);
   else { G = { type:'aim', t:performance.now(), restore:S.ret ? { ...S.ret } : null }; S.press = true; aim(p.x, p.y, e.pointerType === 'touch'); }
   e.preventDefault();
 });
@@ -569,7 +630,15 @@ view.addEventListener('pointermove', e => {
     S.T = { s:ns, x:c.x - wx*ns, y:c.y - wy*ns }; clampView(); draw(); scheduleRegion(); loupeSoon(); return;
   }
   if (!G){ if (e.pointerType === 'mouse' && S.tool !== 'pan') setRet(toWorld(p.x, p.y)); return; }
-  if (G.type === 'pan'){ S.T.x += p.x - G.last.x; S.T.y += p.y - G.last.y; G.last = p; clampView(); draw(); scheduleRegion(); }
+  if (G.type === 'drag'){
+    const dx = (p.x - G.last.x)/S.T.s, dy = (p.y - G.last.y)/S.T.s; G.last = p; const m = G.m;
+    if (G.kind === 'line'){ m.off = m.off || { x:0, y:0 }; m.off.x += dx; m.off.y += dy; }
+    else { m.lo = m.lo || {}; const o = m.lo[G.idx] || { x:0, y:0 }; m.lo[G.idx] = { x:o.x + dx, y:o.y + dy }; }
+    draw();
+  }
+  else if (G.type === 'pan'){
+    if (G.start && !G.moved && Math.hypot(p.x - G.start.x, p.y - G.start.y) > 5) G.moved = true;
+    S.T.x += p.x - G.last.x; S.T.y += p.y - G.last.y; G.last = p; clampView(); draw(); scheduleRegion(); }
   else if (G.type === 'mclick'){
     if (!G.moved && Math.hypot(p.x - G.start.x, p.y - G.start.y) > 4) G.moved = true;
     if (G.moved){ S.T.x += p.x - G.last.x; S.T.y += p.y - G.last.y; clampView(); draw(); scheduleRegion(); }
@@ -581,6 +650,8 @@ function endPtr(e){
   ptrs.delete(e.pointerId); const was = G;
   if (was && was.type === 'mclick' && e.type === 'pointerup' && !was.moved){ const p = rel(e); setRet(toWorld(p.x, p.y)); confirmPoint(); }
   if (was && was.type === 'aim'){ S.press = false; loupeSoon(); }
+  if (was && was.type === 'pan' && was.sel && !was.moved && e.type === 'pointerup' && S.sel){ S.sel = null; updateAll(); }
+  if (was && was.type === 'pan') scheduleRegion();
   if (was && was.type === 'pinch'){ G = ptrs.size ? { type:'none' } : null; scheduleRegion(); loupeSoon(); return; }
   G = ptrs.size ? { type:'none' } : null;
   if (was && was.type === 'mclick' && was.moved) scheduleRegion();
@@ -602,6 +673,7 @@ addEventListener('keydown', e => {
   const k = e.key.toLowerCase(), step = e.shiftKey;
   if (k === 'enter' || k === ' '){ confirmPoint(); }
   else if (k === 'escape'){ cancelPending(); closeSheets(); updateAll(); }
+  else if (k === 'delete' || (k === 'backspace' && S.tool === 'pan' && S.sel)){ delSel(); }
   else if (k === 'backspace' || k === 'z'){ undo(); }
   else if (k === 'arrowleft') nudge(-1, 0, step); else if (k === 'arrowright') nudge(1, 0, step);
   else if (k === 'arrowup') nudge(0, -1, step); else if (k === 'arrowdown') nudge(0, 1, step);
@@ -628,7 +700,9 @@ function updateUI(){
   [['tgOrtho','ortho'],['tgSnap','snap'],['tgChain','chain'],['tgFine','fine'],['tgLoupe','loupe']].forEach(([id,k]) => $('#'+id).setAttribute('aria-pressed', String(!!S[k])));
   $('#pad').hidden = !(S.fine && S.tool !== 'pan');
   $('#btnDone').hidden = !(S.chain && S.cur.length >= 2 && S.tool === 'meas');
-  $('#btnUndo').disabled = !(S.cur.length || S.calA || S.meas.length);
+  const selM = S.tool === 'pan' && !!S.meas.find(m => m.id === S.sel && m.page === S.page);
+  $('#btnDel').hidden = $('#btnReset').hidden = !selM; $('#btnUndo').hidden = selM;
+  $('#btnUndo').disabled = !(S.cur.length || S.calA || S.meas.length || (S.tool === 'pan' && S.deleted.length));
   $('#btnPick').disabled = S.tool === 'pan';
   view.classList.toggle('pan', S.tool === 'pan');
   const coarse = matchMedia('(pointer:coarse)').matches;
@@ -639,7 +713,14 @@ function updateReadout(){
   const lab = $('#roLabel'), val = $('#roVal'), det = $('#roDet'); det.hidden = true; val.classList.remove('hint');
   const hint = (l, t) => { lab.textContent = l; val.classList.add('hint'); val.textContent = t; };
   const coarse = matchMedia('(pointer:coarse)').matches, mm = mmPer();
-  if (S.tool === 'pan') return hint('이동', coarse ? '한 손가락으로 끌어 이동, 두 손가락으로 확대/축소' : '드래그로 이동, 휠로 확대/축소');
+  if (S.tool === 'pan'){
+    const sm = mm && S.meas.find(x => x.id === S.sel && x.page === S.page);
+    if (!sm) return hint('이동 · 선택', coarse ? '선이나 숫자를 눌러 선택하고 끌어서 옮기세요. 빈 곳을 끌면 화면 이동' : '선이나 숫자를 클릭해 선택하고 끌어서 옮기세요. 빈 곳 드래그: 화면 이동, 휠: 확대/축소');
+    const a0 = sm.pts[0], b0 = sm.pts[sm.pts.length-1];
+    lab.textContent = `#${sm.id} 선택됨 · 선이나 숫자를 끌어 옮기기`; val.textContent = fmtLen(pathLen(sm.pts)*mm); det.hidden = false;
+    det.innerHTML = `<i>ΔX <b>${fmtNum((b0.x-a0.x)*mm)}</b></i><i>ΔY <b>${fmtNum(-(b0.y-a0.y)*mm)}</b></i><i>∠ <b>${angleDeg(a0,b0).toFixed(1)}°</b></i>`;
+    return;
+  }
   if (S.tool === 'cal') return hint('축척 보정', !S.calA ? '길이를 아는 선의 시작점을 정하고 ‘점 찍기’를 누르세요' : !S.calB ? '같은 선의 끝점을 정하세요' : '실제 길이를 입력하세요');
   if (!mm) return hint('측정', '먼저 위쪽 축척 버튼으로 축척을 설정하세요');
   let pts = S.cur.concat(S.ret && S.cur.length ? [S.ret] : []), done = false;
@@ -648,10 +729,10 @@ function updateReadout(){
     if (m){ pts = m.pts; done = m.id; } else return hint('측정', S.cur.length ? '다음 점을 정하세요' : (coarse ? '화면을 누르고 끌어 십자선을 맞춘 뒤 ‘점 찍기’' : '시작점을 클릭하세요'));
   }
   const a = pts[pts.length-2], b = pts[pts.length-1], total = pathLen(pts)*mm;
-  lab.textContent = (done ? `#${done} · ` : '') + (pts.length > 2 ? `연속 합계 ${pts.length-1}구간` : '거리') + ` · 탭하면 ${S.unit === 'mm' ? 'm' : 'mm'}로`;
+  lab.textContent = (done ? `#${done} · ` : '') + (pts.length > 2 ? `연속 ${pts.length-1}구간` : '거리') + ' · 탭하면 단위 변경';
   val.textContent = fmtLen(total);
   det.hidden = false;
-  det.innerHTML = `<span>ΔX</span><b>${fmtNum((b.x-a.x)*mm)}</b><span>ΔY</span><b>${fmtNum(-(b.y-a.y)*mm)}</b><span>∠</span><b>${angleDeg(a,b).toFixed(1)}°</b>`;
+  det.innerHTML = `<i>ΔX <b>${fmtNum((b.x-a.x)*mm)}</b></i><i>ΔY <b>${fmtNum(-(b.y-a.y)*mm)}</b></i><i>∠ <b>${angleDeg(a,b).toFixed(1)}°</b></i>`;
 }
 function setTool(t){ cancelPending(); S.tool = t; if (t === 'pan') S.press = false; updateAll(); drawLoupe(); }
 function toggle(k){ S[k] = !S[k]; if (k === 'snap' || k === 'ortho') S.raw && S.ret && setRet(S.raw); updateAll(); drawLoupe(); }
@@ -710,7 +791,7 @@ function renderList(){
       S.sel = m.id; closeSheets(); if (m.page !== S.page) await setPage(m.page);
       const c = { x:(a.x+b.x)/2, y:(a.y+b.y)/2 }; S.T.x = W/2 - c.x*S.T.s; S.T.y = H/2 - c.y*S.T.s; clampView(); updateAll(); scheduleRegion();
     };
-    r.querySelector('.btn').onclick = () => { S.meas = S.meas.filter(x => x.id !== m.id); if (S.sel === m.id) S.sel = null; updateAll(); };
+    r.querySelector('.btn').onclick = () => { S.deleted.push(m); S.meas = S.meas.filter(x => x.id !== m.id); if (S.sel === m.id) S.sel = null; updateAll(); };
     box.append(r);
   });
   $('#sumRow').hidden = n < 2; $('#sumVal').textContent = fmtLen(sum);
@@ -771,6 +852,7 @@ $('#btnList').addEventListener('click', () => openSheet('sheetList'));
 $('#tlPan').onclick = () => setTool('pan'); $('#tlCal').onclick = () => setTool('cal'); $('#tlMeas').onclick = () => setTool('meas');
 $('#tgOrtho').onclick = () => toggle('ortho'); $('#tgSnap').onclick = () => toggle('snap'); $('#tgChain').onclick = () => { toggle('chain'); if (!S.chain && S.cur.length >= 2) finishMeas(); };
 $('#tgFine').onclick = () => toggle('fine'); $('#tgLoupe').onclick = () => toggle('loupe'); $('#tgFit').onclick = () => fitView();
+$('#btnDel').onclick = delSel; $('#btnReset').onclick = resetSel;
 $('#btnPick').onclick = confirmPoint; $('#btnUndo').onclick = undo; $('#btnDone').onclick = () => finishMeas();
 $('#roVal').onclick = () => { if ($('#roVal').classList.contains('hint')) return; S.unit = S.unit === 'mm' ? 'm' : 'mm'; updateAll(); };
 $('#pgPrev').onclick = () => setPage(S.page - 1); $('#pgNext').onclick = () => setPage(S.page + 1);
@@ -800,7 +882,7 @@ async function openFile(f){
     } else if (f.type.startsWith('image/')){
       const url = URL.createObjectURL(f), img = new Image(); img.src = url; await img.decode(); pg = makeImgPage(img, img.naturalWidth, img.naturalHeight);
     } else throw new Error('PDF 또는 이미지 파일을 선택하세요.');
-    Object.assign(S, { doc, pg, name:f.name, page:0, pages:doc ? doc.numPages : 1, scales:{}, meas:[], nextId:1, sel:null, sample:false, tool:'meas', fitS:0 });
+    Object.assign(S, { doc, pg, name:f.name, page:0, pages:doc ? doc.numPages : 1, scales:{}, meas:[], nextId:1, sel:null, sample:false, tool:'meas', fitS:0, deleted:[] });
     cancelPending(); S.ret = null; S.raw = null; R.base = R.reg = R.lp = null; rid++;
     resize(); updateAll(); if (doc) await renderBase();
     toast(''); $('#toast').classList.remove('on'); openSheet('sheetScale');
